@@ -28,7 +28,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -66,7 +65,7 @@ type Gcd struct {
 	port              string
 	host              string
 	addr              string
-	readyCh           chan struct{}
+	readyCh           chan error
 	apiEndpoint       string
 	flags             []string
 	env               []string
@@ -77,7 +76,7 @@ func NewChromeDebugger() *Gcd {
 	c := &Gcd{}
 	c.timeout = 15
 	c.host = "localhost"
-	c.readyCh = make(chan struct{})
+	c.readyCh = make(chan error)
 	c.terminatedHandler = nil
 	c.flags = make([]string, 0)
 	c.env = make([]string, 0)
@@ -108,7 +107,7 @@ func (c *Gcd) AddEnvironmentVars(vars []string) {
 // exePath - the path to the executable
 // userDir - the user directory to start from so we get a fresh profile
 // port - The port to listen on.
-func (c *Gcd) StartProcess(exePath, userDir, port string) {
+func (c *Gcd) StartProcess(exePath, userDir, port string) error {
 	c.port = port
 	c.addr = fmt.Sprintf("%s:%s", c.host, c.port)
 	c.apiEndpoint = fmt.Sprintf("http://%s/json", c.addr)
@@ -125,12 +124,14 @@ func (c *Gcd) StartProcess(exePath, userDir, port string) {
 	// add custom environment variables.
 	c.chromeCmd.Env = os.Environ()
 	c.chromeCmd.Env = append(c.chromeCmd.Env, c.env...)
+
+	err := c.chromeCmd.Start()
+	if err != nil {
+		return err
+	}
+	c.chromeProcess = c.chromeCmd.Process
+
 	go func() {
-		err := c.chromeCmd.Start()
-		if err != nil {
-			log.Fatalf("error starting chrome process: %s", err)
-		}
-		c.chromeProcess = c.chromeCmd.Process
 		err = c.chromeCmd.Wait()
 
 		closeMessage := "exited"
@@ -142,7 +143,7 @@ func (c *Gcd) StartProcess(exePath, userDir, port string) {
 		}
 	}()
 	go c.probeDebugPort()
-	<-c.readyCh
+	return <-c.readyCh
 }
 
 // Kills the process
@@ -153,13 +154,13 @@ func (c *Gcd) ExitProcess() error {
 // ConnectToInstance connects to a running chrome instance without starting a local process
 // Host - The host destination.
 // Port - The port to listen on.
-func (c *Gcd) ConnectToInstance(host string, port string) {
+func (c *Gcd) ConnectToInstance(host string, port string) error {
 	c.host = host
 	c.port = port
 	c.addr = fmt.Sprintf("%s:%s", c.host, c.port)
 	c.apiEndpoint = fmt.Sprintf("http://%s/json", c.addr)
 	go c.probeDebugPort()
-	<-c.readyCh
+	return <-c.readyCh
 }
 
 // Gets the primary tabs/processes to work with. Each will have their own references
@@ -272,10 +273,11 @@ func (c *Gcd) probeDebugPort() {
 				continue
 			}
 			defer resp.Body.Close()
-			c.readyCh <- struct{}{}
+			c.readyCh <- nil
 			return
 		case <-timeoutTicker.C:
-			log.Fatalf("Unable to contact debugger at %s after %d seconds, gave up", c.apiEndpoint, c.timeout)
+			err := fmt.Errorf("unable to contact debugger at %s after %d seconds, gave up", c.apiEndpoint, c.timeout)
+			c.readyCh <- err
 		}
 	}
 }

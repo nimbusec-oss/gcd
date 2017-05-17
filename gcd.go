@@ -74,7 +74,7 @@ type Gcd struct {
 // Give it a friendly name.
 func NewChromeDebugger() *Gcd {
 	c := &Gcd{}
-	c.timeout = 15
+	c.timeout = 15 * time.Second
 	c.host = "localhost"
 	c.readyCh = make(chan error)
 	c.terminatedHandler = nil
@@ -258,12 +258,8 @@ func (c *Gcd) ActivateTab(target *ChromeTarget) error {
 // probes the debugger report and signals when it's available.
 func (c *Gcd) probeDebugPort() {
 	ticker := time.NewTicker(time.Millisecond * 100)
-	timeoutTicker := time.NewTicker(time.Second * c.timeout)
-
-	defer func() {
-		ticker.Stop()
-		timeoutTicker.Stop()
-	}()
+	timeout := time.After(c.timeout)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -275,8 +271,8 @@ func (c *Gcd) probeDebugPort() {
 			defer resp.Body.Close()
 			c.readyCh <- nil
 			return
-		case <-timeoutTicker.C:
-			err := fmt.Errorf("unable to contact debugger at %s after %d seconds, gave up", c.apiEndpoint, c.timeout)
+		case <-timeout:
+			err := fmt.Errorf("unable to contact debugger at %s after %v, gave up", c.apiEndpoint, c.timeout)
 			c.readyCh <- err
 		}
 	}

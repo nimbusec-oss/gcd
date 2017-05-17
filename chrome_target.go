@@ -26,8 +26,8 @@ package gcd
 
 import (
 	"encoding/json"
-	"github.com/wirepair/gcd/gcdapi"
-	"github.com/wirepair/gcd/gcdmessage"
+	"github.com/nimbusec-oss/gcd/gcdapi"
+	"github.com/nimbusec-oss/gcd/gcdmessage"
 	"golang.org/x/net/websocket"
 	"io"
 	"log"

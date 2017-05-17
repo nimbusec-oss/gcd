@@ -52,7 +52,7 @@ Loading a page using the Page API.
 package main
 
 import (
-	"github.com/wirepair/gcd"
+	"github.com/nimbusec-oss/gcd"
 	"log"
 	"sync"
 )
@@ -94,7 +94,7 @@ Getting a document from a target.
 package main
 
 import (
-	"github.com/wirepair/gcd"
+	"github.com/nimbusec-oss/gcd"
 	"log"
 )
 
@@ -123,7 +123,7 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/wirepair/gcd"
+	"github.com/nimbusec-oss/gcd"
 	"log"
 	"net/url"
 	"os"

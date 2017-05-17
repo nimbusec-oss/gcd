@@ -5,7 +5,7 @@
 package gcdapi
 
 import (
-	"github.com/wirepair/gcd/gcdmessage"
+	"github.com/nimbusec-oss/gcd/gcdmessage"
 )
 
 type Storage struct {

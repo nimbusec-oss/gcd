@@ -5,7 +5,7 @@
 package gcdapi
 
 import (
-	"github.com/wirepair/gcd/gcdmessage"
+	"github.com/nimbusec-oss/gcd/gcdmessage"
 )
 
 // Fired when remote debugging connection is about to be terminated. Contains detach reason.

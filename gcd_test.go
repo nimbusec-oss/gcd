@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wirepair/gcd/gcdapi"
+	"github.com/nimbusec-oss/gcd/gcdapi"
 )
 
 var (

@@ -6,7 +6,7 @@ package gcdapi
 
 import (
 	"encoding/json"
-	"github.com/wirepair/gcd/gcdmessage"
+	"github.com/nimbusec-oss/gcd/gcdmessage"
 )
 
 // Screen orientation.

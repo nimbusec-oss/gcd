@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2016 isaac dawson
+Copyright (c) 2017 isaac dawson
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,9 +32,11 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/nimbusec-oss/gcd/gcdapi"
 )
 
-var GCDVERSION = "1.1"
+var GCDVERSION = "1.2017.9.9.0"
 
 // When we get an error reading the body from the debugger api endpoint
 type GcdBodyReadErr struct {
@@ -69,6 +71,7 @@ type Gcd struct {
 	apiEndpoint       string
 	flags             []string
 	env               []string
+	chomeApiVersion   string
 }
 
 // Give it a friendly name.
@@ -230,6 +233,10 @@ func (c *Gcd) NewTab() (*ChromeTarget, error) {
 		return nil, &GcdDecodingErr{Message: err.Error()}
 	}
 	return openChromeTarget(c.addr, tabTarget)
+}
+
+func (c *Gcd) GetRevision() string {
+	return gcdapi.CHROME_VERSION
 }
 
 // Closes the tab

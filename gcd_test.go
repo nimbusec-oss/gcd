@@ -16,12 +16,13 @@ import (
 )
 
 var (
-	debugger       *Gcd
-	testListener   net.Listener
-	testPath       string
-	testDir        string
-	testPort       string
-	testServerAddr string
+	debugger                 *Gcd
+	testListener             net.Listener
+	testSkipNetworkIntercept bool
+	testPath                 string
+	testDir                  string
+	testPort                 string
+	testServerAddr           string
 )
 
 func init() {
@@ -36,8 +37,11 @@ func init() {
 		flag.StringVar(&testPath, "chrome", "/usr/bin/chromium-browser", "path to chrome")
 		flag.StringVar(&testDir, "dir", "/tmp/", "user directory")
 	}
-
 	flag.StringVar(&testPort, "port", "9222", "Debugger port")
+
+	// TODO: remove this once mainline chrome supports it.
+	flag.BoolVar(&testSkipNetworkIntercept, "intercept", true, "set to false to test network intercept, will fail if browser does not support yet.")
+
 }
 
 func TestMain(m *testing.M) {
@@ -51,7 +55,6 @@ func TestMain(m *testing.M) {
 
 func testCleanUp() {
 	testListener.Close()
-
 }
 
 func TestGetPages(t *testing.T) {
@@ -124,7 +127,7 @@ func TestTargetCrashed(t *testing.T) {
 	}
 
 	tab.Subscribe("Inspector.targetCrashed", targetCrashedFn)
-	_, err = tab.Page.Navigate("chrome://crash", "")
+	_, err = tab.Page.Navigate("chrome://crash", "", "typed")
 	if err == nil {
 		t.Fatalf("Navigation should have failed")
 	}
@@ -161,7 +164,7 @@ func TestEvents(t *testing.T) {
 		t.Fatalf("error sending enable: %s\n", err)
 	}
 
-	if _, err := target.Page.Navigate(testServerAddr+"console_log.html", ""); err != nil {
+	if _, err := target.Page.Navigate(testServerAddr+"console_log.html", "", "typed"); err != nil {
 		t.Fatalf("error attempting to navigate: %s\n", err)
 	}
 
@@ -214,7 +217,7 @@ func TestEvaluate(t *testing.T) {
 		close(doneCh)
 	})
 	target.Runtime.Enable()
-	target.Page.Navigate(testServerAddr, "")
+	target.Page.Navigate(testServerAddr, "", "typed")
 	<-doneCh
 }
 
@@ -229,6 +232,34 @@ func TestSimpleReturn(t *testing.T) {
 	}
 	network := target.Network
 	if _, err := network.Enable(-1, -1); err != nil {
+		t.Fatalf("error enabling network")
+	}
+	ret, err = network.CanClearBrowserCache()
+	if err != nil {
+		t.Fatalf("error getting response to clearing browser cache: %s\n", err)
+	}
+	if !ret {
+		t.Fatalf("we should have got true for can clear browser cache\n")
+	}
+}
+
+func TestSimpleReturnWithParams(t *testing.T) {
+	var ret bool
+	testDefaultStartup(t)
+	defer debugger.ExitProcess()
+
+	target, err := debugger.NewTab()
+	if err != nil {
+		t.Fatalf("error getting new tab: %s\n", err)
+	}
+	network := target.Network
+
+	networkParams := &gcdapi.NetworkEnableParams{
+		MaxTotalBufferSize:    -1,
+		MaxResourceBufferSize: -1,
+	}
+
+	if _, err := network.EnableWithParams(networkParams); err != nil {
 		t.Fatalf("error enabling network")
 	}
 	ret, err = network.CanClearBrowserCache()
@@ -280,7 +311,7 @@ func TestComplexReturn(t *testing.T) {
 		close(doneCh)
 	})
 
-	_, err = target.Page.Navigate(testServerAddr+"cookie.html", "")
+	_, err = target.Page.Navigate(testServerAddr+"cookie.html", "", "typed")
 	if err != nil {
 		t.Fatalf("error navigating to cookie page: %s\n", err)
 	}
@@ -320,7 +351,105 @@ func TestConnectToInstance(t *testing.T) {
 	<-doneCh
 }
 
+func TestLocalExtension(t *testing.T) {
+	testExtensionStartup(t)
+	debugger.ConnectToInstance(debugger.host, debugger.port)
+	defer debugger.ExitProcess()
+
+	doneCh := make(chan struct{})
+
+	target, err := debugger.NewTab()
+	if err != nil {
+		t.Fatalf("error creating new tab")
+	}
+
+	if _, err := target.Page.Enable(); err != nil {
+		t.Fatalf("error enabling page: %s\n", err)
+	}
+
+	target.Subscribe("Page.loadEventFired", func(target *ChromeTarget, payload []byte) {
+		t.Logf("page load event fired\n")
+		close(doneCh)
+	})
+
+	if _, err := target.Network.Enable(-1, -1); err != nil {
+		t.Fatalf("error enabling network: %s\n", err)
+	}
+
+	params := &gcdapi.PageNavigateParams{Url: "http://www.google.com"}
+	_, err = target.Page.NavigateWithParams(params)
+	if err != nil {
+		t.Fatalf("error navigating: %s\n", err)
+	}
+
+	go testTimeoutListener(t, doneCh, 15, "timed out waiting for remote connection")
+	<-doneCh
+}
+
+func TestNetworkIntercept(t *testing.T) {
+	if testSkipNetworkIntercept {
+		return
+	}
+
+	testDefaultStartup(t)
+	defer debugger.ExitProcess()
+
+	doneCh := make(chan struct{})
+
+	target, err := debugger.NewTab()
+	if err != nil {
+		t.Fatalf("error getting new tab: %s\n", err)
+	}
+
+	//target.Debug(true)
+	//target.DebugEvents(true)
+
+	go testTimeoutListener(t, doneCh, 5, "timed out waiting for requestIntercepted")
+	network := target.Network
+
+	networkParams := &gcdapi.NetworkEnableParams{
+		MaxTotalBufferSize:    -1,
+		MaxResourceBufferSize: -1,
+	}
+
+	if _, err := network.EnableWithParams(networkParams); err != nil {
+		t.Fatalf("error enabling network")
+	}
+	interceptParams := &gcdapi.NetworkSetRequestInterceptionEnabledParams{Enabled: true}
+
+	if _, err := network.SetRequestInterceptionEnabledWithParams(interceptParams); err != nil {
+		t.Fatalf("unable to set interception enabled: %s\n", err)
+	}
+
+	target.Subscribe("Network.requestIntercepted", func(target *ChromeTarget, payload []byte) {
+		fmt.Printf("requestIntercepted event fired %s\n", string(payload))
+		t.Logf("requestIntercepted event fired %s\n", string(payload))
+		close(doneCh)
+	})
+
+	params := &gcdapi.PageNavigateParams{Url: "http://www.example.com"}
+	_, err = target.Page.NavigateWithParams(params)
+	if err != nil {
+		t.Fatalf("error navigating: %s\n", err)
+	}
+
+	<-doneCh
+}
+
 // UTILITY FUNCTIONS
+func testExtensionStartup(t *testing.T) {
+	debugger = NewChromeDebugger()
+	sep := string(os.PathSeparator)
+
+	path, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("error getting working directory: %s\n", err)
+	}
+
+	extensionPath := "--load-extension=" + path + sep + "testdata" + sep + "extension" + sep
+	debugger.AddFlags([]string{extensionPath})
+	debugger.StartProcess(testPath, testRandomTempDir(t), testRandomPort(t))
+}
 
 func testDefaultStartup(t *testing.T) {
 	debugger = NewChromeDebugger()
@@ -342,7 +471,9 @@ func testTimeoutListener(t *testing.T, closeCh chan struct{}, seconds time.Durat
 			timeout.Stop()
 			return
 		case <-timeout.C:
+			close(closeCh)
 			t.Fatalf("timed out waiting for %s", message)
+			return
 		}
 	}
 }

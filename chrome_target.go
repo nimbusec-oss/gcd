@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2016 isaac dawson
+Copyright (c) 2017 isaac dawson
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -76,7 +76,8 @@ type ChromeTarget struct {
 	DeviceOrientation *gcdapi.DeviceOrientation // Device Orientation API
 	DOMDebugger       *gcdapi.DOMDebugger       // DOM Debugger API
 	DOM               *gcdapi.DOM               // DOM API
-	DOMStorage        *gcdapi.DOMStorage        // DOM Storage API
+	DOMSnapshot       *gcdapi.DOMSnapshot
+	DOMStorage        *gcdapi.DOMStorage // DOM Storage API
 	Emulation         *gcdapi.Emulation
 	HeapProfiler      *gcdapi.HeapProfiler // HeapProfiler API
 	IndexedDB         *gcdapi.IndexedDB    // IndexedDB API
@@ -87,9 +88,10 @@ type ChromeTarget struct {
 	Log               *gcdapi.Log
 	Memory            *gcdapi.Memory
 	Network           *gcdapi.Network
+	Overlay           *gcdapi.Overlay
 	Page              *gcdapi.Page
 	Profiler          *gcdapi.Profiler
-	Rendering         *gcdapi.Rendering
+	Performance       *gcdapi.Performance // if stable channel you'll need to uncomment
 	Runtime           *gcdapi.Runtime
 	Schema            *gcdapi.Schema
 	Security          *gcdapi.Security
@@ -143,6 +145,7 @@ func (c *ChromeTarget) Init() {
 	c.DeviceOrientation = gcdapi.NewDeviceOrientation(c)
 	c.DOMDebugger = gcdapi.NewDOMDebugger(c)
 	c.DOM = gcdapi.NewDOM(c)
+	c.DOMSnapshot = gcdapi.NewDOMSnapshot(c)
 	c.DOMStorage = gcdapi.NewDOMStorage(c)
 	c.Emulation = gcdapi.NewEmulation(c)
 	c.HeapProfiler = gcdapi.NewHeapProfiler(c)
@@ -154,9 +157,9 @@ func (c *ChromeTarget) Init() {
 	c.Memory = gcdapi.NewMemory(c)
 	c.Log = gcdapi.NewLog(c)
 	c.Network = gcdapi.NewNetwork(c)
+	c.Overlay = gcdapi.NewOverlay(c)
 	c.Page = gcdapi.NewPage(c)
 	c.Profiler = gcdapi.NewProfiler(c)
-	c.Rendering = gcdapi.NewRendering(c)
 	c.Runtime = gcdapi.NewRuntime(c)
 	c.Schema = gcdapi.NewSchema(c)
 	c.Security = gcdapi.NewSecurity(c)
@@ -165,6 +168,8 @@ func (c *ChromeTarget) Init() {
 	c.TargetApi = gcdapi.NewTarget(c)
 	c.Tracing = gcdapi.NewTracing(c)
 	c.Tethering = gcdapi.NewTethering(c)
+	// if stable channel you'll need to comment this out
+	c.Performance = gcdapi.NewPerformance(c)
 }
 
 // clean up this target

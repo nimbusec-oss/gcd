@@ -11,13 +11,14 @@ import (
 
 // Information about the Frame on the page.
 type PageFrame struct {
-	Id             string `json:"id"`                 // Frame unique identifier.
-	ParentId       string `json:"parentId,omitempty"` // Parent frame identifier.
-	LoaderId       string `json:"loaderId"`           // Identifier of the loader associated with this frame.
-	Name           string `json:"name,omitempty"`     // Frame's name as specified in the tag.
-	Url            string `json:"url"`                // Frame document's URL.
-	SecurityOrigin string `json:"securityOrigin"`     // Frame document's security origin.
-	MimeType       string `json:"mimeType"`           // Frame document's mimeType as determined by the browser.
+	Id             string `json:"id"`                       // Frame unique identifier.
+	ParentId       string `json:"parentId,omitempty"`       // Parent frame identifier.
+	LoaderId       string `json:"loaderId"`                 // Identifier of the loader associated with this frame.
+	Name           string `json:"name,omitempty"`           // Frame's name as specified in the tag.
+	Url            string `json:"url"`                      // Frame document's URL.
+	SecurityOrigin string `json:"securityOrigin"`           // Frame document's security origin.
+	MimeType       string `json:"mimeType"`                 // Frame document's mimeType as determined by the browser.
+	UnreachableUrl string `json:"unreachableUrl,omitempty"` // If the frame failed to load, this contains the URL that could not be loaded.
 }
 
 // Information about the Resource on the page.
@@ -40,9 +41,11 @@ type PageFrameResourceTree struct {
 
 // Navigation history entry.
 type PageNavigationEntry struct {
-	Id    int    `json:"id"`    // Unique id of the navigation history entry.
-	Url   string `json:"url"`   // URL of the navigation history entry.
-	Title string `json:"title"` // Title of the navigation history entry.
+	Id             int    `json:"id"`             // Unique id of the navigation history entry.
+	Url            string `json:"url"`            // URL of the navigation history entry.
+	UserTypedURL   string `json:"userTypedURL"`   // URL that the user typed in the url bar.
+	Title          string `json:"title"`          // Title of the navigation history entry.
+	TransitionType string `json:"transitionType"` // Transition type. enum values: link, typed, auto_bookmark, auto_subframe, manual_subframe, generated, auto_toplevel, form_submit, reload, keyword, keyword_generated, other
 }
 
 // Screencast frame metadata.
@@ -83,6 +86,15 @@ type PageVisualViewport struct {
 	Scale        float64 `json:"scale"`        // Scale relative to the ideal viewport (size at width=device-width).
 }
 
+// Viewport for capturing screenshot.
+type PageViewport struct {
+	X      float64 `json:"x"`      // X offset in CSS pixels.
+	Y      float64 `json:"y"`      // Y offset in CSS pixels
+	Width  float64 `json:"width"`  // Rectangle width in CSS pixels
+	Height float64 `json:"height"` // Rectangle height in CSS pixels
+	Scale  float64 `json:"scale"`  // Page scale factor.
+}
+
 //
 type PageDomContentEventFiredEvent struct {
 	Method string `json:"method"`
@@ -95,6 +107,15 @@ type PageDomContentEventFiredEvent struct {
 type PageLoadEventFiredEvent struct {
 	Method string `json:"method"`
 	Params struct {
+		Timestamp float64 `json:"timestamp"` //
+	} `json:"Params,omitempty"`
+}
+
+// Fired for top level page lifecycle events such as navigation, load, paint, etc.
+type PageLifecycleEventEvent struct {
+	Method string `json:"method"`
+	Params struct {
+		Name      string  `json:"name"`      //
 		Timestamp float64 `json:"timestamp"` //
 	} `json:"Params,omitempty"`
 }
@@ -147,6 +168,8 @@ type PageFrameScheduledNavigationEvent struct {
 	Params struct {
 		FrameId string  `json:"frameId"` // Id of the frame that has scheduled a navigation.
 		Delay   float64 `json:"delay"`   // Delay (in seconds) until the navigation is scheduled to begin. The navigation is not guaranteed to start.
+		Reason  string  `json:"reason"`  // The reason for the navigation.
+		Url     string  `json:"url"`     // The destination URL for the scheduled navigation.
 	} `json:"Params,omitempty"`
 }
 
@@ -162,8 +185,10 @@ type PageFrameClearedScheduledNavigationEvent struct {
 type PageJavascriptDialogOpeningEvent struct {
 	Method string `json:"method"`
 	Params struct {
-		Message string `json:"message"` // Message that will be displayed by the dialog.
-		Type    string `json:"type"`    // Dialog type. enum values: alert, confirm, prompt, beforeunload
+		Url           string `json:"url"`                     // Frame url.
+		Message       string `json:"message"`                 // Message that will be displayed by the dialog.
+		Type          string `json:"type"`                    // Dialog type. enum values: alert, confirm, prompt, beforeunload
+		DefaultPrompt string `json:"defaultPrompt,omitempty"` // Default dialog prompt.
 	} `json:"Params,omitempty"`
 }
 
@@ -171,7 +196,8 @@ type PageJavascriptDialogOpeningEvent struct {
 type PageJavascriptDialogClosedEvent struct {
 	Method string `json:"method"`
 	Params struct {
-		Result bool `json:"result"` // Whether dialog was confirmed.
+		Result    bool   `json:"result"`    // Whether dialog was confirmed.
+		UserInput string `json:"userInput"` // User input in case of prompt.
 	} `json:"Params,omitempty"`
 }
 
@@ -190,25 +216,6 @@ type PageScreencastVisibilityChangedEvent struct {
 	Method string `json:"method"`
 	Params struct {
 		Visible bool `json:"visible"` // True if the page is visible.
-	} `json:"Params,omitempty"`
-}
-
-// Fired when a color has been picked.
-type PageColorPickedEvent struct {
-	Method string `json:"method"`
-	Params struct {
-		Color *DOMRGBA `json:"color"` // RGBA of the picked color.
-	} `json:"Params,omitempty"`
-}
-
-// Fired when a navigation is started if navigation throttles are enabled.  The navigation will be deferred until processNavigation is called.
-type PageNavigationRequestedEvent struct {
-	Method string `json:"method"`
-	Params struct {
-		IsInMainFrame bool   `json:"isInMainFrame"` // Whether the navigation is taking place in the main frame or in a subframe.
-		IsRedirect    bool   `json:"isRedirect"`    // Whether the navigation has encountered a server redirect or not.
-		NavigationId  int    `json:"navigationId"`  //
-		Url           string `json:"url"`           // URL of requested navigation.
 	} `json:"Params,omitempty"`
 }
 
@@ -231,13 +238,15 @@ func (c *Page) Disable() (*gcdmessage.ChromeResponse, error) {
 	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.disable"})
 }
 
-// AddScriptToEvaluateOnLoad -
-// scriptSource -
+type PageAddScriptToEvaluateOnLoadParams struct {
+	//
+	ScriptSource string `json:"scriptSource"`
+}
+
+// AddScriptToEvaluateOnLoadWithParams - Deprecated, please use addScriptToEvaluateOnNewDocument instead.
 // Returns -  identifier - Identifier of the added script.
-func (c *Page) AddScriptToEvaluateOnLoad(scriptSource string) (string, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["scriptSource"] = scriptSource
-	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.addScriptToEvaluateOnLoad", Params: paramRequest})
+func (c *Page) AddScriptToEvaluateOnLoadWithParams(v *PageAddScriptToEvaluateOnLoadParams) (string, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.addScriptToEvaluateOnLoad", Params: v})
 	if err != nil {
 		return "", err
 	}
@@ -266,41 +275,168 @@ func (c *Page) AddScriptToEvaluateOnLoad(scriptSource string) (string, error) {
 	return chromeData.Result.Identifier, nil
 }
 
-// RemoveScriptToEvaluateOnLoad -
+// AddScriptToEvaluateOnLoad - Deprecated, please use addScriptToEvaluateOnNewDocument instead.
+// scriptSource -
+// Returns -  identifier - Identifier of the added script.
+func (c *Page) AddScriptToEvaluateOnLoad(scriptSource string) (string, error) {
+	var v PageAddScriptToEvaluateOnLoadParams
+	v.ScriptSource = scriptSource
+	return c.AddScriptToEvaluateOnLoadWithParams(&v)
+}
+
+type PageRemoveScriptToEvaluateOnLoadParams struct {
+	//
+	Identifier string `json:"identifier"`
+}
+
+// RemoveScriptToEvaluateOnLoadWithParams - Deprecated, please use removeScriptToEvaluateOnNewDocument instead.
+func (c *Page) RemoveScriptToEvaluateOnLoadWithParams(v *PageRemoveScriptToEvaluateOnLoadParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.removeScriptToEvaluateOnLoad", Params: v})
+}
+
+// RemoveScriptToEvaluateOnLoad - Deprecated, please use removeScriptToEvaluateOnNewDocument instead.
 // identifier -
 func (c *Page) RemoveScriptToEvaluateOnLoad(identifier string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["identifier"] = identifier
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.removeScriptToEvaluateOnLoad", Params: paramRequest})
+	var v PageRemoveScriptToEvaluateOnLoadParams
+	v.Identifier = identifier
+	return c.RemoveScriptToEvaluateOnLoadWithParams(&v)
+}
+
+type PageAddScriptToEvaluateOnNewDocumentParams struct {
+	//
+	Source string `json:"source"`
+}
+
+// AddScriptToEvaluateOnNewDocumentWithParams - Evaluates given script in every frame upon creation (before loading frame's scripts).
+// Returns -  identifier - Identifier of the added script.
+func (c *Page) AddScriptToEvaluateOnNewDocumentWithParams(v *PageAddScriptToEvaluateOnNewDocumentParams) (string, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.addScriptToEvaluateOnNewDocument", Params: v})
+	if err != nil {
+		return "", err
+	}
+
+	var chromeData struct {
+		Result struct {
+			Identifier string
+		}
+	}
+
+	if resp == nil {
+		return "", &gcdmessage.ChromeEmptyResponseErr{}
+	}
+
+	// test if error first
+	cerr := &gcdmessage.ChromeErrorResponse{}
+	json.Unmarshal(resp.Data, cerr)
+	if cerr != nil && cerr.Error != nil {
+		return "", &gcdmessage.ChromeRequestErr{Resp: cerr}
+	}
+
+	if err := json.Unmarshal(resp.Data, &chromeData); err != nil {
+		return "", err
+	}
+
+	return chromeData.Result.Identifier, nil
+}
+
+// AddScriptToEvaluateOnNewDocument - Evaluates given script in every frame upon creation (before loading frame's scripts).
+// source -
+// Returns -  identifier - Identifier of the added script.
+func (c *Page) AddScriptToEvaluateOnNewDocument(source string) (string, error) {
+	var v PageAddScriptToEvaluateOnNewDocumentParams
+	v.Source = source
+	return c.AddScriptToEvaluateOnNewDocumentWithParams(&v)
+}
+
+type PageRemoveScriptToEvaluateOnNewDocumentParams struct {
+	//
+	Identifier string `json:"identifier"`
+}
+
+// RemoveScriptToEvaluateOnNewDocumentWithParams - Removes given script from the list.
+func (c *Page) RemoveScriptToEvaluateOnNewDocumentWithParams(v *PageRemoveScriptToEvaluateOnNewDocumentParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.removeScriptToEvaluateOnNewDocument", Params: v})
+}
+
+// RemoveScriptToEvaluateOnNewDocument - Removes given script from the list.
+// identifier -
+func (c *Page) RemoveScriptToEvaluateOnNewDocument(identifier string) (*gcdmessage.ChromeResponse, error) {
+	var v PageRemoveScriptToEvaluateOnNewDocumentParams
+	v.Identifier = identifier
+	return c.RemoveScriptToEvaluateOnNewDocumentWithParams(&v)
+}
+
+type PageSetAutoAttachToCreatedPagesParams struct {
+	// If true, browser will open a new inspector window for every page created from this one.
+	AutoAttach bool `json:"autoAttach"`
+}
+
+// SetAutoAttachToCreatedPagesWithParams - Controls whether browser will open a new inspector window for connected pages.
+func (c *Page) SetAutoAttachToCreatedPagesWithParams(v *PageSetAutoAttachToCreatedPagesParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setAutoAttachToCreatedPages", Params: v})
 }
 
 // SetAutoAttachToCreatedPages - Controls whether browser will open a new inspector window for connected pages.
 // autoAttach - If true, browser will open a new inspector window for every page created from this one.
 func (c *Page) SetAutoAttachToCreatedPages(autoAttach bool) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["autoAttach"] = autoAttach
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setAutoAttachToCreatedPages", Params: paramRequest})
+	var v PageSetAutoAttachToCreatedPagesParams
+	v.AutoAttach = autoAttach
+	return c.SetAutoAttachToCreatedPagesWithParams(&v)
+}
+
+type PageReloadParams struct {
+	// If true, browser cache is ignored (as if the user pressed Shift+refresh).
+	IgnoreCache bool `json:"ignoreCache,omitempty"`
+	// If set, the script will be injected into all frames of the inspected page after reload.
+	ScriptToEvaluateOnLoad string `json:"scriptToEvaluateOnLoad,omitempty"`
+}
+
+// ReloadWithParams - Reloads given page optionally ignoring the cache.
+func (c *Page) ReloadWithParams(v *PageReloadParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.reload", Params: v})
 }
 
 // Reload - Reloads given page optionally ignoring the cache.
 // ignoreCache - If true, browser cache is ignored (as if the user pressed Shift+refresh).
 // scriptToEvaluateOnLoad - If set, the script will be injected into all frames of the inspected page after reload.
 func (c *Page) Reload(ignoreCache bool, scriptToEvaluateOnLoad string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["ignoreCache"] = ignoreCache
-	paramRequest["scriptToEvaluateOnLoad"] = scriptToEvaluateOnLoad
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.reload", Params: paramRequest})
+	var v PageReloadParams
+	v.IgnoreCache = ignoreCache
+	v.ScriptToEvaluateOnLoad = scriptToEvaluateOnLoad
+	return c.ReloadWithParams(&v)
 }
 
-// Navigate - Navigates current page to the given URL.
-// url - URL to navigate the page to.
-// referrer - Referrer URL.
+type PageSetAdBlockingEnabledParams struct {
+	// Whether to block ads.
+	Enabled bool `json:"enabled"`
+}
+
+// SetAdBlockingEnabledWithParams - Enable Chrome's experimental ad filter on all sites.
+func (c *Page) SetAdBlockingEnabledWithParams(v *PageSetAdBlockingEnabledParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setAdBlockingEnabled", Params: v})
+}
+
+// SetAdBlockingEnabled - Enable Chrome's experimental ad filter on all sites.
+// enabled - Whether to block ads.
+func (c *Page) SetAdBlockingEnabled(enabled bool) (*gcdmessage.ChromeResponse, error) {
+	var v PageSetAdBlockingEnabledParams
+	v.Enabled = enabled
+	return c.SetAdBlockingEnabledWithParams(&v)
+}
+
+type PageNavigateParams struct {
+	// URL to navigate the page to.
+	Url string `json:"url"`
+	// Referrer URL.
+	Referrer string `json:"referrer,omitempty"`
+	// Intended transition type. enum values: link, typed, auto_bookmark, auto_subframe, manual_subframe, generated, auto_toplevel, form_submit, reload, keyword, keyword_generated, other
+	TransitionType string `json:"transitionType,omitempty"`
+}
+
+// NavigateWithParams - Navigates current page to the given URL.
 // Returns -  frameId - Frame id that will be navigated.
-func (c *Page) Navigate(url string, referrer string) (string, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["url"] = url
-	paramRequest["referrer"] = referrer
-	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.navigate", Params: paramRequest})
+func (c *Page) NavigateWithParams(v *PageNavigateParams) (string, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.navigate", Params: v})
 	if err != nil {
 		return "", err
 	}
@@ -327,6 +463,19 @@ func (c *Page) Navigate(url string, referrer string) (string, error) {
 	}
 
 	return chromeData.Result.FrameId, nil
+}
+
+// Navigate - Navigates current page to the given URL.
+// url - URL to navigate the page to.
+// referrer - Referrer URL.
+// transitionType - Intended transition type. enum values: link, typed, auto_bookmark, auto_subframe, manual_subframe, generated, auto_toplevel, form_submit, reload, keyword, keyword_generated, other
+// Returns -  frameId - Frame id that will be navigated.
+func (c *Page) Navigate(url string, referrer string, transitionType string) (string, error) {
+	var v PageNavigateParams
+	v.Url = url
+	v.Referrer = referrer
+	v.TransitionType = transitionType
+	return c.NavigateWithParams(&v)
 }
 
 // Force the page stop all navigations and pending resource fetches.
@@ -367,12 +516,22 @@ func (c *Page) GetNavigationHistory() (int, []*PageNavigationEntry, error) {
 	return chromeData.Result.CurrentIndex, chromeData.Result.Entries, nil
 }
 
+type PageNavigateToHistoryEntryParams struct {
+	// Unique id of the entry to navigate to.
+	EntryId int `json:"entryId"`
+}
+
+// NavigateToHistoryEntryWithParams - Navigates current page to the given history entry.
+func (c *Page) NavigateToHistoryEntryWithParams(v *PageNavigateToHistoryEntryParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.navigateToHistoryEntry", Params: v})
+}
+
 // NavigateToHistoryEntry - Navigates current page to the given history entry.
 // entryId - Unique id of the entry to navigate to.
 func (c *Page) NavigateToHistoryEntry(entryId int) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["entryId"] = entryId
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.navigateToHistoryEntry", Params: paramRequest})
+	var v PageNavigateToHistoryEntryParams
+	v.EntryId = entryId
+	return c.NavigateToHistoryEntryWithParams(&v)
 }
 
 // GetCookies - Returns all browser cookies. Depending on the backend support, will return detailed cookie information in the <code>cookies</code> field.
@@ -407,14 +566,26 @@ func (c *Page) GetCookies() ([]*NetworkCookie, error) {
 	return chromeData.Result.Cookies, nil
 }
 
+type PageDeleteCookieParams struct {
+	// Name of the cookie to remove.
+	CookieName string `json:"cookieName"`
+	// URL to match cooke domain and path.
+	Url string `json:"url"`
+}
+
+// DeleteCookieWithParams - Deletes browser cookie with given name, domain and path.
+func (c *Page) DeleteCookieWithParams(v *PageDeleteCookieParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.deleteCookie", Params: v})
+}
+
 // DeleteCookie - Deletes browser cookie with given name, domain and path.
 // cookieName - Name of the cookie to remove.
 // url - URL to match cooke domain and path.
 func (c *Page) DeleteCookie(cookieName string, url string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["cookieName"] = cookieName
-	paramRequest["url"] = url
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.deleteCookie", Params: paramRequest})
+	var v PageDeleteCookieParams
+	v.CookieName = cookieName
+	v.Url = url
+	return c.DeleteCookieWithParams(&v)
 }
 
 // GetResourceTree - Returns present frame / resource tree structure.
@@ -449,15 +620,17 @@ func (c *Page) GetResourceTree() (*PageFrameResourceTree, error) {
 	return chromeData.Result.FrameTree, nil
 }
 
-// GetResourceContent - Returns content of the given resource.
-// frameId - Frame id to get resource for.
-// url - URL of the resource to get content for.
+type PageGetResourceContentParams struct {
+	// Frame id to get resource for.
+	FrameId string `json:"frameId"`
+	// URL of the resource to get content for.
+	Url string `json:"url"`
+}
+
+// GetResourceContentWithParams - Returns content of the given resource.
 // Returns -  content - Resource content. base64Encoded - True, if content was served as base64.
-func (c *Page) GetResourceContent(frameId string, url string) (string, bool, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["frameId"] = frameId
-	paramRequest["url"] = url
-	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.getResourceContent", Params: paramRequest})
+func (c *Page) GetResourceContentWithParams(v *PageGetResourceContentParams) (string, bool, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.getResourceContent", Params: v})
 	if err != nil {
 		return "", false, err
 	}
@@ -487,21 +660,34 @@ func (c *Page) GetResourceContent(frameId string, url string) (string, bool, err
 	return chromeData.Result.Content, chromeData.Result.Base64Encoded, nil
 }
 
-// SearchInResource - Searches for given string in resource content.
-// frameId - Frame id for resource to search in.
-// url - URL of the resource to search in.
-// query - String to search for.
-// caseSensitive - If true, search is case sensitive.
-// isRegex - If true, treats string parameter as regex.
+// GetResourceContent - Returns content of the given resource.
+// frameId - Frame id to get resource for.
+// url - URL of the resource to get content for.
+// Returns -  content - Resource content. base64Encoded - True, if content was served as base64.
+func (c *Page) GetResourceContent(frameId string, url string) (string, bool, error) {
+	var v PageGetResourceContentParams
+	v.FrameId = frameId
+	v.Url = url
+	return c.GetResourceContentWithParams(&v)
+}
+
+type PageSearchInResourceParams struct {
+	// Frame id for resource to search in.
+	FrameId string `json:"frameId"`
+	// URL of the resource to search in.
+	Url string `json:"url"`
+	// String to search for.
+	Query string `json:"query"`
+	// If true, search is case sensitive.
+	CaseSensitive bool `json:"caseSensitive,omitempty"`
+	// If true, treats string parameter as regex.
+	IsRegex bool `json:"isRegex,omitempty"`
+}
+
+// SearchInResourceWithParams - Searches for given string in resource content.
 // Returns -  result - List of search matches.
-func (c *Page) SearchInResource(frameId string, url string, query string, caseSensitive bool, isRegex bool) ([]*DebuggerSearchMatch, error) {
-	paramRequest := make(map[string]interface{}, 5)
-	paramRequest["frameId"] = frameId
-	paramRequest["url"] = url
-	paramRequest["query"] = query
-	paramRequest["caseSensitive"] = caseSensitive
-	paramRequest["isRegex"] = isRegex
-	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.searchInResource", Params: paramRequest})
+func (c *Page) SearchInResourceWithParams(v *PageSearchInResourceParams) ([]*DebuggerSearchMatch, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.searchInResource", Params: v})
 	if err != nil {
 		return nil, err
 	}
@@ -530,14 +716,73 @@ func (c *Page) SearchInResource(frameId string, url string, query string, caseSe
 	return chromeData.Result.Result, nil
 }
 
+// SearchInResource - Searches for given string in resource content.
+// frameId - Frame id for resource to search in.
+// url - URL of the resource to search in.
+// query - String to search for.
+// caseSensitive - If true, search is case sensitive.
+// isRegex - If true, treats string parameter as regex.
+// Returns -  result - List of search matches.
+func (c *Page) SearchInResource(frameId string, url string, query string, caseSensitive bool, isRegex bool) ([]*DebuggerSearchMatch, error) {
+	var v PageSearchInResourceParams
+	v.FrameId = frameId
+	v.Url = url
+	v.Query = query
+	v.CaseSensitive = caseSensitive
+	v.IsRegex = isRegex
+	return c.SearchInResourceWithParams(&v)
+}
+
+type PageSetDocumentContentParams struct {
+	// Frame id to set HTML for.
+	FrameId string `json:"frameId"`
+	// HTML content to set.
+	Html string `json:"html"`
+}
+
+// SetDocumentContentWithParams - Sets given markup as the document's HTML.
+func (c *Page) SetDocumentContentWithParams(v *PageSetDocumentContentParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setDocumentContent", Params: v})
+}
+
 // SetDocumentContent - Sets given markup as the document's HTML.
 // frameId - Frame id to set HTML for.
 // html - HTML content to set.
 func (c *Page) SetDocumentContent(frameId string, html string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["frameId"] = frameId
-	paramRequest["html"] = html
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setDocumentContent", Params: paramRequest})
+	var v PageSetDocumentContentParams
+	v.FrameId = frameId
+	v.Html = html
+	return c.SetDocumentContentWithParams(&v)
+}
+
+type PageSetDeviceMetricsOverrideParams struct {
+	// Overriding width value in pixels (minimum 0, maximum 10000000). 0 disables the override.
+	Width int `json:"width"`
+	// Overriding height value in pixels (minimum 0, maximum 10000000). 0 disables the override.
+	Height int `json:"height"`
+	// Overriding device scale factor value. 0 disables the override.
+	DeviceScaleFactor float64 `json:"deviceScaleFactor"`
+	// Whether to emulate mobile device. This includes viewport meta tag, overlay scrollbars, text autosizing and more.
+	Mobile bool `json:"mobile"`
+	// Scale to apply to resulting view image. Ignored in |fitWindow| mode.
+	Scale float64 `json:"scale,omitempty"`
+	// Overriding screen width value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
+	ScreenWidth int `json:"screenWidth,omitempty"`
+	// Overriding screen height value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
+	ScreenHeight int `json:"screenHeight,omitempty"`
+	// Overriding view X position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
+	PositionX int `json:"positionX,omitempty"`
+	// Overriding view Y position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
+	PositionY int `json:"positionY,omitempty"`
+	// Do not set visible view size, rely upon explicit setVisibleSize call.
+	DontSetVisibleSize bool `json:"dontSetVisibleSize,omitempty"`
+	// Screen orientation override.
+	ScreenOrientation *EmulationScreenOrientation `json:"screenOrientation,omitempty"`
+}
+
+// SetDeviceMetricsOverrideWithParams - Overrides the values of device screen dimensions (window.screen.width, window.screen.height, window.innerWidth, window.innerHeight, and "device-width"/"device-height"-related CSS media query results).
+func (c *Page) SetDeviceMetricsOverrideWithParams(v *PageSetDeviceMetricsOverrideParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setDeviceMetricsOverride", Params: v})
 }
 
 // SetDeviceMetricsOverride - Overrides the values of device screen dimensions (window.screen.width, window.screen.height, window.innerWidth, window.innerHeight, and "device-width"/"device-height"-related CSS media query results).
@@ -545,31 +790,27 @@ func (c *Page) SetDocumentContent(frameId string, html string) (*gcdmessage.Chro
 // height - Overriding height value in pixels (minimum 0, maximum 10000000). 0 disables the override.
 // deviceScaleFactor - Overriding device scale factor value. 0 disables the override.
 // mobile - Whether to emulate mobile device. This includes viewport meta tag, overlay scrollbars, text autosizing and more.
-// fitWindow - Whether a view that exceeds the available browser window area should be scaled down to fit.
 // scale - Scale to apply to resulting view image. Ignored in |fitWindow| mode.
-// offsetX - X offset to shift resulting view image by. Ignored in |fitWindow| mode.
-// offsetY - Y offset to shift resulting view image by. Ignored in |fitWindow| mode.
 // screenWidth - Overriding screen width value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
 // screenHeight - Overriding screen height value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
 // positionX - Overriding view X position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
 // positionY - Overriding view Y position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|.
+// dontSetVisibleSize - Do not set visible view size, rely upon explicit setVisibleSize call.
 // screenOrientation - Screen orientation override.
-func (c *Page) SetDeviceMetricsOverride(width int, height int, deviceScaleFactor float64, mobile bool, fitWindow bool, scale float64, offsetX float64, offsetY float64, screenWidth int, screenHeight int, positionX int, positionY int, screenOrientation *EmulationScreenOrientation) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 13)
-	paramRequest["width"] = width
-	paramRequest["height"] = height
-	paramRequest["deviceScaleFactor"] = deviceScaleFactor
-	paramRequest["mobile"] = mobile
-	paramRequest["fitWindow"] = fitWindow
-	paramRequest["scale"] = scale
-	paramRequest["offsetX"] = offsetX
-	paramRequest["offsetY"] = offsetY
-	paramRequest["screenWidth"] = screenWidth
-	paramRequest["screenHeight"] = screenHeight
-	paramRequest["positionX"] = positionX
-	paramRequest["positionY"] = positionY
-	paramRequest["screenOrientation"] = screenOrientation
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setDeviceMetricsOverride", Params: paramRequest})
+func (c *Page) SetDeviceMetricsOverride(width int, height int, deviceScaleFactor float64, mobile bool, scale float64, screenWidth int, screenHeight int, positionX int, positionY int, dontSetVisibleSize bool, screenOrientation *EmulationScreenOrientation) (*gcdmessage.ChromeResponse, error) {
+	var v PageSetDeviceMetricsOverrideParams
+	v.Width = width
+	v.Height = height
+	v.DeviceScaleFactor = deviceScaleFactor
+	v.Mobile = mobile
+	v.Scale = scale
+	v.ScreenWidth = screenWidth
+	v.ScreenHeight = screenHeight
+	v.PositionX = positionX
+	v.PositionY = positionY
+	v.DontSetVisibleSize = dontSetVisibleSize
+	v.ScreenOrientation = screenOrientation
+	return c.SetDeviceMetricsOverrideWithParams(&v)
 }
 
 // Clears the overriden device metrics.
@@ -577,16 +818,30 @@ func (c *Page) ClearDeviceMetricsOverride() (*gcdmessage.ChromeResponse, error) 
 	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.clearDeviceMetricsOverride"})
 }
 
+type PageSetGeolocationOverrideParams struct {
+	// Mock latitude
+	Latitude float64 `json:"latitude,omitempty"`
+	// Mock longitude
+	Longitude float64 `json:"longitude,omitempty"`
+	// Mock accuracy
+	Accuracy float64 `json:"accuracy,omitempty"`
+}
+
+// SetGeolocationOverrideWithParams - Overrides the Geolocation Position or Error. Omitting any of the parameters emulates position unavailable.
+func (c *Page) SetGeolocationOverrideWithParams(v *PageSetGeolocationOverrideParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setGeolocationOverride", Params: v})
+}
+
 // SetGeolocationOverride - Overrides the Geolocation Position or Error. Omitting any of the parameters emulates position unavailable.
 // latitude - Mock latitude
 // longitude - Mock longitude
 // accuracy - Mock accuracy
 func (c *Page) SetGeolocationOverride(latitude float64, longitude float64, accuracy float64) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 3)
-	paramRequest["latitude"] = latitude
-	paramRequest["longitude"] = longitude
-	paramRequest["accuracy"] = accuracy
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setGeolocationOverride", Params: paramRequest})
+	var v PageSetGeolocationOverrideParams
+	v.Latitude = latitude
+	v.Longitude = longitude
+	v.Accuracy = accuracy
+	return c.SetGeolocationOverrideWithParams(&v)
 }
 
 // Clears the overriden Geolocation Position and Error.
@@ -594,16 +849,30 @@ func (c *Page) ClearGeolocationOverride() (*gcdmessage.ChromeResponse, error) {
 	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.clearGeolocationOverride"})
 }
 
+type PageSetDeviceOrientationOverrideParams struct {
+	// Mock alpha
+	Alpha float64 `json:"alpha"`
+	// Mock beta
+	Beta float64 `json:"beta"`
+	// Mock gamma
+	Gamma float64 `json:"gamma"`
+}
+
+// SetDeviceOrientationOverrideWithParams - Overrides the Device Orientation.
+func (c *Page) SetDeviceOrientationOverrideWithParams(v *PageSetDeviceOrientationOverrideParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setDeviceOrientationOverride", Params: v})
+}
+
 // SetDeviceOrientationOverride - Overrides the Device Orientation.
 // alpha - Mock alpha
 // beta - Mock beta
 // gamma - Mock gamma
 func (c *Page) SetDeviceOrientationOverride(alpha float64, beta float64, gamma float64) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 3)
-	paramRequest["alpha"] = alpha
-	paramRequest["beta"] = beta
-	paramRequest["gamma"] = gamma
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setDeviceOrientationOverride", Params: paramRequest})
+	var v PageSetDeviceOrientationOverrideParams
+	v.Alpha = alpha
+	v.Beta = beta
+	v.Gamma = gamma
+	return c.SetDeviceOrientationOverrideWithParams(&v)
 }
 
 // Clears the overridden Device Orientation.
@@ -611,27 +880,117 @@ func (c *Page) ClearDeviceOrientationOverride() (*gcdmessage.ChromeResponse, err
 	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.clearDeviceOrientationOverride"})
 }
 
+type PageSetTouchEmulationEnabledParams struct {
+	// Whether the touch event emulation should be enabled.
+	Enabled bool `json:"enabled"`
+	// Touch/gesture events configuration. Default: current platform.
+	Configuration string `json:"configuration,omitempty"`
+}
+
+// SetTouchEmulationEnabledWithParams - Toggles mouse event-based touch event emulation.
+func (c *Page) SetTouchEmulationEnabledWithParams(v *PageSetTouchEmulationEnabledParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setTouchEmulationEnabled", Params: v})
+}
+
 // SetTouchEmulationEnabled - Toggles mouse event-based touch event emulation.
 // enabled - Whether the touch event emulation should be enabled.
 // configuration - Touch/gesture events configuration. Default: current platform.
 func (c *Page) SetTouchEmulationEnabled(enabled bool, configuration string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["enabled"] = enabled
-	paramRequest["configuration"] = configuration
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setTouchEmulationEnabled", Params: paramRequest})
+	var v PageSetTouchEmulationEnabledParams
+	v.Enabled = enabled
+	v.Configuration = configuration
+	return c.SetTouchEmulationEnabledWithParams(&v)
+}
+
+type PageCaptureScreenshotParams struct {
+	// Image compression format (defaults to png).
+	Format string `json:"format,omitempty"`
+	// Compression quality from range [0..100] (jpeg only).
+	Quality int `json:"quality,omitempty"`
+	// Capture the screenshot of a given region only.
+	Clip *PageViewport `json:"clip,omitempty"`
+	// Capture the screenshot from the surface, rather than the view. Defaults to true.
+	FromSurface bool `json:"fromSurface,omitempty"`
+}
+
+// CaptureScreenshotWithParams - Capture page screenshot.
+// Returns -  data - Base64-encoded image data.
+func (c *Page) CaptureScreenshotWithParams(v *PageCaptureScreenshotParams) (string, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.captureScreenshot", Params: v})
+	if err != nil {
+		return "", err
+	}
+
+	var chromeData struct {
+		Result struct {
+			Data string
+		}
+	}
+
+	if resp == nil {
+		return "", &gcdmessage.ChromeEmptyResponseErr{}
+	}
+
+	// test if error first
+	cerr := &gcdmessage.ChromeErrorResponse{}
+	json.Unmarshal(resp.Data, cerr)
+	if cerr != nil && cerr.Error != nil {
+		return "", &gcdmessage.ChromeRequestErr{Resp: cerr}
+	}
+
+	if err := json.Unmarshal(resp.Data, &chromeData); err != nil {
+		return "", err
+	}
+
+	return chromeData.Result.Data, nil
 }
 
 // CaptureScreenshot - Capture page screenshot.
 // format - Image compression format (defaults to png).
 // quality - Compression quality from range [0..100] (jpeg only).
-// fromSurface - Capture the screenshot from the surface, rather than the view. Defaults to false.
+// clip - Capture the screenshot of a given region only.
+// fromSurface - Capture the screenshot from the surface, rather than the view. Defaults to true.
 // Returns -  data - Base64-encoded image data.
-func (c *Page) CaptureScreenshot(format string, quality int, fromSurface bool) (string, error) {
-	paramRequest := make(map[string]interface{}, 3)
-	paramRequest["format"] = format
-	paramRequest["quality"] = quality
-	paramRequest["fromSurface"] = fromSurface
-	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.captureScreenshot", Params: paramRequest})
+func (c *Page) CaptureScreenshot(format string, quality int, clip *PageViewport, fromSurface bool) (string, error) {
+	var v PageCaptureScreenshotParams
+	v.Format = format
+	v.Quality = quality
+	v.Clip = clip
+	v.FromSurface = fromSurface
+	return c.CaptureScreenshotWithParams(&v)
+}
+
+type PagePrintToPDFParams struct {
+	// Paper orientation. Defaults to false.
+	Landscape bool `json:"landscape,omitempty"`
+	// Display header and footer. Defaults to false.
+	DisplayHeaderFooter bool `json:"displayHeaderFooter,omitempty"`
+	// Print background graphics. Defaults to false.
+	PrintBackground bool `json:"printBackground,omitempty"`
+	// Scale of the webpage rendering. Defaults to 1.
+	Scale float64 `json:"scale,omitempty"`
+	// Paper width in inches. Defaults to 8.5 inches.
+	PaperWidth float64 `json:"paperWidth,omitempty"`
+	// Paper height in inches. Defaults to 11 inches.
+	PaperHeight float64 `json:"paperHeight,omitempty"`
+	// Top margin in inches. Defaults to 1cm (~0.4 inches).
+	MarginTop float64 `json:"marginTop,omitempty"`
+	// Bottom margin in inches. Defaults to 1cm (~0.4 inches).
+	MarginBottom float64 `json:"marginBottom,omitempty"`
+	// Left margin in inches. Defaults to 1cm (~0.4 inches).
+	MarginLeft float64 `json:"marginLeft,omitempty"`
+	// Right margin in inches. Defaults to 1cm (~0.4 inches).
+	MarginRight float64 `json:"marginRight,omitempty"`
+	// Paper ranges to print, e.g., '1-5, 8, 11-13'. Defaults to the empty string, which means print all pages.
+	PageRanges string `json:"pageRanges,omitempty"`
+	// Whether to silently ignore invalid but successfully parsed page ranges, such as '3-2'. Defaults to false.
+	IgnoreInvalidPageRanges bool `json:"ignoreInvalidPageRanges,omitempty"`
+}
+
+// PrintToPDFWithParams - Print page as PDF.
+// Returns -  data - Base64-encoded pdf data.
+func (c *Page) PrintToPDFWithParams(v *PagePrintToPDFParams) (string, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.printToPDF", Params: v})
 	if err != nil {
 		return "", err
 	}
@@ -660,36 +1019,53 @@ func (c *Page) CaptureScreenshot(format string, quality int, fromSurface bool) (
 	return chromeData.Result.Data, nil
 }
 
-// PrintToPDF - Print page as pdf.
+// PrintToPDF - Print page as PDF.
+// landscape - Paper orientation. Defaults to false.
+// displayHeaderFooter - Display header and footer. Defaults to false.
+// printBackground - Print background graphics. Defaults to false.
+// scale - Scale of the webpage rendering. Defaults to 1.
+// paperWidth - Paper width in inches. Defaults to 8.5 inches.
+// paperHeight - Paper height in inches. Defaults to 11 inches.
+// marginTop - Top margin in inches. Defaults to 1cm (~0.4 inches).
+// marginBottom - Bottom margin in inches. Defaults to 1cm (~0.4 inches).
+// marginLeft - Left margin in inches. Defaults to 1cm (~0.4 inches).
+// marginRight - Right margin in inches. Defaults to 1cm (~0.4 inches).
+// pageRanges - Paper ranges to print, e.g., '1-5, 8, 11-13'. Defaults to the empty string, which means print all pages.
+// ignoreInvalidPageRanges - Whether to silently ignore invalid but successfully parsed page ranges, such as '3-2'. Defaults to false.
 // Returns -  data - Base64-encoded pdf data.
-func (c *Page) PrintToPDF() (string, error) {
-	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.printToPDF"})
-	if err != nil {
-		return "", err
-	}
+func (c *Page) PrintToPDF(landscape bool, displayHeaderFooter bool, printBackground bool, scale float64, paperWidth float64, paperHeight float64, marginTop float64, marginBottom float64, marginLeft float64, marginRight float64, pageRanges string, ignoreInvalidPageRanges bool) (string, error) {
+	var v PagePrintToPDFParams
+	v.Landscape = landscape
+	v.DisplayHeaderFooter = displayHeaderFooter
+	v.PrintBackground = printBackground
+	v.Scale = scale
+	v.PaperWidth = paperWidth
+	v.PaperHeight = paperHeight
+	v.MarginTop = marginTop
+	v.MarginBottom = marginBottom
+	v.MarginLeft = marginLeft
+	v.MarginRight = marginRight
+	v.PageRanges = pageRanges
+	v.IgnoreInvalidPageRanges = ignoreInvalidPageRanges
+	return c.PrintToPDFWithParams(&v)
+}
 
-	var chromeData struct {
-		Result struct {
-			Data string
-		}
-	}
+type PageStartScreencastParams struct {
+	// Image compression format.
+	Format string `json:"format,omitempty"`
+	// Compression quality from range [0..100].
+	Quality int `json:"quality,omitempty"`
+	// Maximum screenshot width.
+	MaxWidth int `json:"maxWidth,omitempty"`
+	// Maximum screenshot height.
+	MaxHeight int `json:"maxHeight,omitempty"`
+	// Send every n-th frame.
+	EveryNthFrame int `json:"everyNthFrame,omitempty"`
+}
 
-	if resp == nil {
-		return "", &gcdmessage.ChromeEmptyResponseErr{}
-	}
-
-	// test if error first
-	cerr := &gcdmessage.ChromeErrorResponse{}
-	json.Unmarshal(resp.Data, cerr)
-	if cerr != nil && cerr.Error != nil {
-		return "", &gcdmessage.ChromeRequestErr{Resp: cerr}
-	}
-
-	if err := json.Unmarshal(resp.Data, &chromeData); err != nil {
-		return "", err
-	}
-
-	return chromeData.Result.Data, nil
+// StartScreencastWithParams - Starts sending each frame using the <code>screencastFrame</code> event.
+func (c *Page) StartScreencastWithParams(v *PageStartScreencastParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.startScreencast", Params: v})
 }
 
 // StartScreencast - Starts sending each frame using the <code>screencastFrame</code> event.
@@ -699,13 +1075,13 @@ func (c *Page) PrintToPDF() (string, error) {
 // maxHeight - Maximum screenshot height.
 // everyNthFrame - Send every n-th frame.
 func (c *Page) StartScreencast(format string, quality int, maxWidth int, maxHeight int, everyNthFrame int) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 5)
-	paramRequest["format"] = format
-	paramRequest["quality"] = quality
-	paramRequest["maxWidth"] = maxWidth
-	paramRequest["maxHeight"] = maxHeight
-	paramRequest["everyNthFrame"] = everyNthFrame
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.startScreencast", Params: paramRequest})
+	var v PageStartScreencastParams
+	v.Format = format
+	v.Quality = quality
+	v.MaxWidth = maxWidth
+	v.MaxHeight = maxHeight
+	v.EveryNthFrame = everyNthFrame
+	return c.StartScreencastWithParams(&v)
 }
 
 // Stops sending each frame in the <code>screencastFrame</code>.
@@ -713,40 +1089,44 @@ func (c *Page) StopScreencast() (*gcdmessage.ChromeResponse, error) {
 	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.stopScreencast"})
 }
 
+type PageScreencastFrameAckParams struct {
+	// Frame number.
+	SessionId int `json:"sessionId"`
+}
+
+// ScreencastFrameAckWithParams - Acknowledges that a screencast frame has been received by the frontend.
+func (c *Page) ScreencastFrameAckWithParams(v *PageScreencastFrameAckParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.screencastFrameAck", Params: v})
+}
+
 // ScreencastFrameAck - Acknowledges that a screencast frame has been received by the frontend.
 // sessionId - Frame number.
 func (c *Page) ScreencastFrameAck(sessionId int) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["sessionId"] = sessionId
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.screencastFrameAck", Params: paramRequest})
+	var v PageScreencastFrameAckParams
+	v.SessionId = sessionId
+	return c.ScreencastFrameAckWithParams(&v)
+}
+
+type PageHandleJavaScriptDialogParams struct {
+	// Whether to accept or dismiss the dialog.
+	Accept bool `json:"accept"`
+	// The text to enter into the dialog prompt before accepting. Used only if this is a prompt dialog.
+	PromptText string `json:"promptText,omitempty"`
+}
+
+// HandleJavaScriptDialogWithParams - Accepts or dismisses a JavaScript initiated dialog (alert, confirm, prompt, or onbeforeunload).
+func (c *Page) HandleJavaScriptDialogWithParams(v *PageHandleJavaScriptDialogParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.handleJavaScriptDialog", Params: v})
 }
 
 // HandleJavaScriptDialog - Accepts or dismisses a JavaScript initiated dialog (alert, confirm, prompt, or onbeforeunload).
 // accept - Whether to accept or dismiss the dialog.
 // promptText - The text to enter into the dialog prompt before accepting. Used only if this is a prompt dialog.
 func (c *Page) HandleJavaScriptDialog(accept bool, promptText string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["accept"] = accept
-	paramRequest["promptText"] = promptText
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.handleJavaScriptDialog", Params: paramRequest})
-}
-
-// SetColorPickerEnabled - Shows / hides color picker
-// enabled - Shows / hides color picker
-func (c *Page) SetColorPickerEnabled(enabled bool) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["enabled"] = enabled
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setColorPickerEnabled", Params: paramRequest})
-}
-
-// ConfigureOverlay - Configures overlay.
-// suspended - Whether overlay should be suspended and not consume any resources.
-// message - Overlay message to display.
-func (c *Page) ConfigureOverlay(suspended bool, message string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["suspended"] = suspended
-	paramRequest["message"] = message
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.configureOverlay", Params: paramRequest})
+	var v PageHandleJavaScriptDialogParams
+	v.Accept = accept
+	v.PromptText = promptText
+	return c.HandleJavaScriptDialogWithParams(&v)
 }
 
 // GetAppManifest -
@@ -788,24 +1168,6 @@ func (c *Page) RequestAppBanner() (*gcdmessage.ChromeResponse, error) {
 	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.requestAppBanner"})
 }
 
-// SetControlNavigations - Toggles navigation throttling which allows programatic control over navigation and redirect response.
-// enabled -
-func (c *Page) SetControlNavigations(enabled bool) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["enabled"] = enabled
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setControlNavigations", Params: paramRequest})
-}
-
-// ProcessNavigation - Should be sent in response to a navigationRequested or a redirectRequested event, telling the browser how to handle the navigation.
-// response -  enum values: Proceed, Cancel, CancelAndIgnore
-// navigationId -
-func (c *Page) ProcessNavigation(response string, navigationId int) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["response"] = response
-	paramRequest["navigationId"] = navigationId
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.processNavigation", Params: paramRequest})
-}
-
 // GetLayoutMetrics - Returns metrics relating to the layouting of the page, such as viewport bounds/scale.
 // Returns -  layoutViewport - Metrics relating to the layout viewport. visualViewport - Metrics relating to the visual viewport. contentSize - Size of scrollable area.
 func (c *Page) GetLayoutMetrics() (*PageLayoutViewport, *PageVisualViewport, *DOMRect, error) {
@@ -838,4 +1200,85 @@ func (c *Page) GetLayoutMetrics() (*PageLayoutViewport, *PageVisualViewport, *DO
 	}
 
 	return chromeData.Result.LayoutViewport, chromeData.Result.VisualViewport, chromeData.Result.ContentSize, nil
+}
+
+type PageCreateIsolatedWorldParams struct {
+	// Id of the frame in which the isolated world should be created.
+	FrameId string `json:"frameId"`
+	// An optional name which is reported in the Execution Context.
+	WorldName string `json:"worldName,omitempty"`
+	// Whether or not universal access should be granted to the isolated world. This is a powerful option, use with caution.
+	GrantUniveralAccess bool `json:"grantUniveralAccess,omitempty"`
+}
+
+// CreateIsolatedWorldWithParams - Creates an isolated world for the given frame.
+// Returns -  executionContextId - Execution context of the isolated world.
+func (c *Page) CreateIsolatedWorldWithParams(v *PageCreateIsolatedWorldParams) (int, error) {
+	resp, err := gcdmessage.SendCustomReturn(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.createIsolatedWorld", Params: v})
+	if err != nil {
+		return 0, err
+	}
+
+	var chromeData struct {
+		Result struct {
+			ExecutionContextId int
+		}
+	}
+
+	if resp == nil {
+		return 0, &gcdmessage.ChromeEmptyResponseErr{}
+	}
+
+	// test if error first
+	cerr := &gcdmessage.ChromeErrorResponse{}
+	json.Unmarshal(resp.Data, cerr)
+	if cerr != nil && cerr.Error != nil {
+		return 0, &gcdmessage.ChromeRequestErr{Resp: cerr}
+	}
+
+	if err := json.Unmarshal(resp.Data, &chromeData); err != nil {
+		return 0, err
+	}
+
+	return chromeData.Result.ExecutionContextId, nil
+}
+
+// CreateIsolatedWorld - Creates an isolated world for the given frame.
+// frameId - Id of the frame in which the isolated world should be created.
+// worldName - An optional name which is reported in the Execution Context.
+// grantUniveralAccess - Whether or not universal access should be granted to the isolated world. This is a powerful option, use with caution.
+// Returns -  executionContextId - Execution context of the isolated world.
+func (c *Page) CreateIsolatedWorld(frameId string, worldName string, grantUniveralAccess bool) (int, error) {
+	var v PageCreateIsolatedWorldParams
+	v.FrameId = frameId
+	v.WorldName = worldName
+	v.GrantUniveralAccess = grantUniveralAccess
+	return c.CreateIsolatedWorldWithParams(&v)
+}
+
+// Brings page to front (activates tab).
+func (c *Page) BringToFront() (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.bringToFront"})
+}
+
+type PageSetDownloadBehaviorParams struct {
+	// Whether to allow all or deny all download requests, or use default Chrome behavior if available (otherwise deny).
+	Behavior string `json:"behavior"`
+	// The default path to save downloaded files to. This is requred if behavior is set to 'allow'
+	DownloadPath string `json:"downloadPath,omitempty"`
+}
+
+// SetDownloadBehaviorWithParams - Set the behavior when downloading a file.
+func (c *Page) SetDownloadBehaviorWithParams(v *PageSetDownloadBehaviorParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Page.setDownloadBehavior", Params: v})
+}
+
+// SetDownloadBehavior - Set the behavior when downloading a file.
+// behavior - Whether to allow all or deny all download requests, or use default Chrome behavior if available (otherwise deny).
+// downloadPath - The default path to save downloaded files to. This is requred if behavior is set to 'allow'
+func (c *Page) SetDownloadBehavior(behavior string, downloadPath string) (*gcdmessage.ChromeResponse, error) {
+	var v PageSetDownloadBehaviorParams
+	v.Behavior = behavior
+	v.DownloadPath = downloadPath
+	return c.SetDownloadBehaviorWithParams(&v)
 }

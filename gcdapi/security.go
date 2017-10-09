@@ -10,10 +10,11 @@ import (
 
 // An explanation of an factor contributing to the security state.
 type SecuritySecurityStateExplanation struct {
-	SecurityState  string `json:"securityState"`  // Security state representing the severity of the factor being explained. enum values: unknown, neutral, insecure, warning, secure, info
-	Summary        string `json:"summary"`        // Short phrase describing the type of factor.
-	Description    string `json:"description"`    // Full text explanation of the factor.
-	HasCertificate bool   `json:"hasCertificate"` // True if the page has a certificate.
+	SecurityState    string   `json:"securityState"`    // Security state representing the severity of the factor being explained. enum values: unknown, neutral, insecure, secure, info
+	Summary          string   `json:"summary"`          // Short phrase describing the type of factor.
+	Description      string   `json:"description"`      // Full text explanation of the factor.
+	MixedContentType string   `json:"mixedContentType"` // The type of mixed content described by the explanation. enum values: blockable, optionally-blockable, none
+	Certificate      []string `json:"certificate"`      // Page certificate.
 }
 
 // Information about insecure content on the page.
@@ -23,15 +24,15 @@ type SecurityInsecureContentStatus struct {
 	ContainedMixedForm             bool   `json:"containedMixedForm"`             // True if the page was loaded over HTTPS and contained a form targeting an insecure url.
 	RanContentWithCertErrors       bool   `json:"ranContentWithCertErrors"`       // True if the page was loaded over HTTPS without certificate errors, and ran content such as scripts that were loaded with certificate errors.
 	DisplayedContentWithCertErrors bool   `json:"displayedContentWithCertErrors"` // True if the page was loaded over HTTPS without certificate errors, and displayed content such as images that were loaded with certificate errors.
-	RanInsecureContentStyle        string `json:"ranInsecureContentStyle"`        // Security state representing a page that ran insecure content. enum values: unknown, neutral, insecure, warning, secure, info
-	DisplayedInsecureContentStyle  string `json:"displayedInsecureContentStyle"`  // Security state representing a page that displayed insecure content. enum values: unknown, neutral, insecure, warning, secure, info
+	RanInsecureContentStyle        string `json:"ranInsecureContentStyle"`        // Security state representing a page that ran insecure content. enum values: unknown, neutral, insecure, secure, info
+	DisplayedInsecureContentStyle  string `json:"displayedInsecureContentStyle"`  // Security state representing a page that displayed insecure content. enum values: unknown, neutral, insecure, secure, info
 }
 
 // The security state of the page changed.
 type SecuritySecurityStateChangedEvent struct {
 	Method string `json:"method"`
 	Params struct {
-		SecurityState         string                              `json:"securityState"`         // Security state. enum values: unknown, neutral, insecure, warning, secure, info
+		SecurityState         string                              `json:"securityState"`         // Security state. enum values: unknown, neutral, insecure, secure, info
 		SchemeIsCryptographic bool                                `json:"schemeIsCryptographic"` // True if the page was loaded over cryptographic transport such as HTTPS.
 		Explanations          []*SecuritySecurityStateExplanation `json:"explanations"`          // List of explanations for the security state. If the overall security state is `insecure` or `warning`, at least one corresponding explanation should be included.
 		InsecureContentStatus *SecurityInsecureContentStatus      `json:"insecureContentStatus"` // Information about insecure content on the page.
@@ -68,25 +69,42 @@ func (c *Security) Disable() (*gcdmessage.ChromeResponse, error) {
 	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Security.disable"})
 }
 
-// Displays native dialog with the certificate details.
-func (c *Security) ShowCertificateViewer() (*gcdmessage.ChromeResponse, error) {
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Security.showCertificateViewer"})
+type SecurityHandleCertificateErrorParams struct {
+	// The ID of the event.
+	EventId int `json:"eventId"`
+	// The action to take on the certificate error. enum values: continue, cancel
+	Action string `json:"action"`
+}
+
+// HandleCertificateErrorWithParams - Handles a certificate error that fired a certificateError event.
+func (c *Security) HandleCertificateErrorWithParams(v *SecurityHandleCertificateErrorParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Security.handleCertificateError", Params: v})
 }
 
 // HandleCertificateError - Handles a certificate error that fired a certificateError event.
 // eventId - The ID of the event.
 // action - The action to take on the certificate error. enum values: continue, cancel
 func (c *Security) HandleCertificateError(eventId int, action string) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 2)
-	paramRequest["eventId"] = eventId
-	paramRequest["action"] = action
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Security.handleCertificateError", Params: paramRequest})
+	var v SecurityHandleCertificateErrorParams
+	v.EventId = eventId
+	v.Action = action
+	return c.HandleCertificateErrorWithParams(&v)
+}
+
+type SecuritySetOverrideCertificateErrorsParams struct {
+	// If true, certificate errors will be overridden.
+	Override bool `json:"override"`
+}
+
+// SetOverrideCertificateErrorsWithParams - Enable/disable overriding certificate errors. If enabled, all certificate error events need to be handled by the DevTools client and should be answered with handleCertificateError commands.
+func (c *Security) SetOverrideCertificateErrorsWithParams(v *SecuritySetOverrideCertificateErrorsParams) (*gcdmessage.ChromeResponse, error) {
+	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Security.setOverrideCertificateErrors", Params: v})
 }
 
 // SetOverrideCertificateErrors - Enable/disable overriding certificate errors. If enabled, all certificate error events need to be handled by the DevTools client and should be answered with handleCertificateError commands.
 // override - If true, certificate errors will be overridden.
 func (c *Security) SetOverrideCertificateErrors(override bool) (*gcdmessage.ChromeResponse, error) {
-	paramRequest := make(map[string]interface{}, 1)
-	paramRequest["override"] = override
-	return gcdmessage.SendDefaultRequest(c.target, c.target.GetSendCh(), &gcdmessage.ParamRequest{Id: c.target.GetId(), Method: "Security.setOverrideCertificateErrors", Params: paramRequest})
+	var v SecuritySetOverrideCertificateErrorsParams
+	v.Override = override
+	return c.SetOverrideCertificateErrorsWithParams(&v)
 }
